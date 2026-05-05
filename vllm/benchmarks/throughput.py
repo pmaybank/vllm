@@ -167,9 +167,25 @@ def run_vllm_chat(
             )
         )
     start = time.perf_counter()
+
+    # Pause the scheduler
+    llm.sleep(level=0, mode="abort")
+
+    start = time.perf_counter()
     if do_profile:
         llm.start_profile()
-    outputs = llm.chat(prompts, sampling_params, use_tqdm=True)
+
+    # Enqueue all requests
+    for i, (prompt, params) in enumerate(zip(prompts, sampling_params)):
+        engine_input = llm._preprocess_chat_one(prompt)
+        llm._add_request(engine_input, params, priority=i)
+
+    # Wake up the engine to start processing
+    llm.wake_up()
+
+    # Wait for all requests to complete
+    outputs = llm.wait_for_completion(output_type=RequestOutput, use_tqdm=True)
+
     if do_profile:
         llm.stop_profile()
     end = time.perf_counter()
